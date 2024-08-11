@@ -7,6 +7,168 @@ globals.exec_params = params
 metaxploit_path = "/lib/metaxploit.so"
 metaxploit = include_lib(metaxploit_path)
 
+libs = {}
+libs.absolutePath = function(rPath, cPath) //current path + relative path = absolute path
+    if rPath.len == 0 then return print("invalid path.")
+    if rPath[0] == "/" then return rPath
+    if cPath.len == 0 then return print("invalid path.")
+    if not cPath[0] == "/" then return print("invalid path.")
+    if not cPath[-1] == "/" then cPath = cPath + "/"
+    absPath = cPath + rPath
+    while absPath.len > 1 and absPath[-1] == "/"
+        absPath = absPath[:-1]
+    end while
+    return absPath
+end function
+libs.changeDir = function(toPath, fileObject) //go to another dir
+    if not fileObject then fileObject = globals.current.folder
+    while fileObject.parent
+        fileObject = fileObject.parent
+    end while
+    if toPath.len == 0 then return print("File not found.")
+    while (toPath.len > 1) and (toPath[-1] == "/") //trim end "/"
+        toPath = toPath[:-1]
+    end while
+    while (toPath.len > 1) and (toPath[0] == "/") //trim start "/"
+        toPath = toPath[1:]
+    end while
+    if toPath == "/" then return fileObject
+    toPath = toPath.split("/")
+    for p in toPath
+        found = false
+        for f in fileObject.get_folders
+            if not f.name == p then continue
+            found = true
+            fileObject = f
+            break
+        end for
+        if not found then return print("Folder not found.")
+    end for
+    if not fileObject.is_folder then return print("Folder not found.")
+    return fileObject
+end function
+libs.getFile = function(toPath, fileObject) //changeDir only support folder but this works for both
+    if not fileObject then fileObject = globals.current.folder
+    while fileObject.parent
+        fileObject = fileObject.parent
+    end while
+    if toPath.len == 0 then return print("File not found.")
+    while (toPath.len > 1) and (toPath[-1] == "/") //trim end "/"
+        toPath = toPath[:-1]
+    end while
+    while (toPath.len > 1) and (toPath[0] == "/") //trim start "/"
+        toPath = toPath[1:]
+    end while
+    if toPath == "/" then return fileObject
+    toPath = toPath.split("/")
+    for i in toPath.indexes
+        found = false
+        if i == (toPath.len - 1) then
+            for f in fileObject.get_folders + fileObject.get_files
+                if not f.name == toPath[i] then continue
+                return f
+            end for
+            return print("File not found")
+        end if
+        for f in fileObject.get_folders
+            if not f.name == toPath[i] then continue
+            found = true
+            fileObject = f
+            break
+        end for
+        if not found then return print("File not found.")
+    end for
+    return fileObject
+end function
+libs.allFiles = function(fileObject, maxDepth = -1)
+    if fileObject.is_folder then total = {"ret":[fileObject], "stack":[maxDepth, fileObject]} else return [fileObject]
+    while total.stack
+        c = {"folder":total.stack.pop, "maxDepth":total.stack.pop}
+        if c.maxDepth then total.ret = total.ret + c.folder.get_folders + c.folder.get_files else continue
+        folders = c.folder.get_folders
+        for i in range(len(folders) - 1)
+            if folders then [total.stack.push(c.maxDepth - 1), total.stack.push(folders[i])] else break
+        end for
+    end while
+    return total.ret
+end function
+libs.find = function(fileName, fileObject) //find files under a dir
+    founded = []
+    files = self.allFiles(fileObject)
+    for file in files
+        if lower(file.name).indexOf(lower(fileName)) != null then founded = founded + [file]
+    end for
+    return founded
+end function
+libs.toFile = function(anyObject)
+    if anyObject.type == "shell" then return anyObject.shell.host_computer.File("/")
+    if anyObject.type == "computer" then return anyObject.computer.File("/")
+    if anyObject.type == "file" then
+        while anyObject.parent
+            anyObject = anyObject.parent
+        end while
+        return anyObject
+    end if
+    return null
+end function
+libs.corruptLog = function(fileObject) //overwrite system.log by copy the smallest file to that dir
+	if not fileObject then fileObject = current.folder
+    while fileObject.parent
+        fileObject = fileObject.parent
+    end while
+    files = self.allFiles(fileObject, 3)
+    toCopy = null
+    for file in files
+        if file.is_folder or (not file.has_permission("r")) then continue
+        if not toCopy then toCopy = file
+        if val(file.size) < val(toCopy.size) then toCopy = file
+    end for
+    if not toCopy then return print("No file to overwrite log! try using ""touch"".")
+    logFile = self.getFile("/var/system.log", fileObject)
+    if not logFile then return print("log file not found!")
+    tryDelete = logFile.delete
+    if tryDelete == "" then print("Log file deleted.") else return print("Error: " + tryDelete)
+    tryCopy = toCopy.copy("/var", "system.log")
+    if tryCopy == true then return print("All steps done. Log cleared.")
+    return print(tryCopy)
+end function
+libs.fileSize = function(bytes) //translate byte to kb and mb
+    bytes = bytes.to_int
+    i = 0
+    units = ["B","KB","MB","GB","TB","PT"]
+    while bytes > 1024
+        bytes = bytes / 1024
+        i = i + 1
+    end while
+    return round(bytes, 2) + units[i]
+end function
+libs.scanLib = function(metaLib, metaxploit)
+    if not metaLib then return null
+    if not metaxploit then metaxploit = globals.metaxploit
+    ret = {}
+    ret.lib_name = metaLib.lib_name
+    ret.version = metaLib.version
+    ret.memorys = {}
+    memorys = metaxploit.scan(metaLib)
+    for memory in memorys
+        addresses = metaxploit.scan_address(metaLib, memory).split("Unsafe check:")
+        ret.memorys[memory] = []
+        for address in addresses
+            if address == addresses[0] then continue
+            value = address[address.indexOf("<b>")+3:address.indexOf("</b>")]
+            value = value.replace("\n", "")
+            ret.memorys[memory] = ret.memorys[memory] + [value]
+        end for
+    end for
+    return ret
+end function
+libs.typeofFile = function(fileObject)
+    if not typeof(fileObject) == "file" then return null
+    if fileObject.is_folder then return "fld"
+    if fileObject.is_binary then return "bin"
+    return "txt"
+end function
+
 if not metaxploit then
     metaxploit_path = current_path + "/metaxploit.so"
     metaxploit = include_lib(metaxploit_path)
@@ -74,7 +236,6 @@ debug = function(var, key = "", deep = 1)
     if typeof(@var) == "string" or typeof(@var) == "number" or typeof(@var) == "null" then
         return print(key.pad(40) + " = " + var)
     end if
-
     for i in var.indexes
         debug(var[i], key + "[""" + @i + """]")
     end for
@@ -88,54 +249,39 @@ end function
 get_exploit_info = function(scan_address_result)
     vulnerabilities = []
     i = -1
-
     for line in scan_address_result.split("\n")
         if line.trim == "" then continue
-
         if line.indexOf("Unsafe") != null then
             i = i + 1
             key = line.split("in ")[1].split("\.")[0]
-
             if key.indexOf(" ") then key = key.split(" ")[1]
-
             key = key.replace("<b>", "").replace("</b>", "").trim
             vulnerabilities.push({"variable": key, "requirements": [], "raw": line.replace("<b>", "").replace("</b>", "").trim})
             continue
         end if
-
         line = line.replace("<b>", "").replace("</b>", "").trim
         vulnerabilities[i].raw = vulnerabilities[i].raw + "\n" + line
         vulnerabilities[i].requirements.push(line)
     end for
-
     return vulnerabilities
 end function
 
 parse_print = function(str, prefix = "", color = "info")
-    symbol = ""
-    
+    symbol = ""    
     if typeof(str) != "string" then str = str + ""
     str = str.replace("\n", char(10))
-
     if prefix + "" != "" then prefix = prefix + " - "
-
     if color == "info" then symbol = "*"
-
     if color == "error" then symbol = "-"
-
     if color == "good" then symbol = "+"
-
     color = color.replace("error", "#FF3A3A")
     color = color.replace("good", "#6eb0aa")
     color = color.replace("info", "#426fa8")
-
     for s in str.split("\n")
         if s == "" then continue
-
         s = s[0].upper + s[1 : ]
         print("<b><color=" + color + ">[" + symbol + "]</color></b> " + prefix + s)
     end for
-
 end function
 
 print_error = function(str = "", prefix = "")
@@ -153,94 +299,62 @@ print_info = function(str = "", prefix = "")
     return true
 end function
 
-
 get_file = function(shell, path, silent = null)
-
     if path[0] != "/" then path = session.pwd + "/" + path
-    
     file = shell
-
     if typeof(shell) == "shell" then file = shell.host_computer.File("/")
-    
     if typeof(shell) == "computer" then file = shell.File("/")
-
     while file.path != "/"
         file = file.parent
     end while
-
     i = 0
-
     if path[-1] == "/" then path = path[0:-1]
-
     if path == "" then path = "/"
-
-    path = path.replace("//", "/")
-
-    while file.path != path
-
+    path_ = path.replace("//", "/")
+    while file.path != path_
         i = i + 1
-
         if i > 10 then break
-
         if file.path == "/" then
             directory_to_reach = path.split(file.path)
         else
-            directory_to_reach = path.split(file.path)[1].split("/")[1]
+            directory_to_reach = path.split(file.path)[1].split("/")
         end if
-
         directory_to_reach = directory_to_reach.replace("//", "/")
-
-        found = null
-
+        found = 0
         for reach_file in file.get_folders + file.get_files
-            if reach_file.name == directory_to_reach then
+            if reach_file.name == (directory_to_reach[1]) then
                 found = 1
                 file = reach_file
-                break
+				break
             end if
         end for
-
-        if not found then return path + " -> file not found"
-
+        if found == 0 then return path_ + " -> file not found"
     end while
-
     return file
-
 end function
 
-write_file = function(session, path, content = "")
-
+write_file = function(session, path, content)
     if path[0] != "/" then path = session.pwd + "/" + path
-
     chars = "_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM1234567890/."
-
     for s in path
         if chars.indexOf(s) != null then continue
         path = path.replace(s, "")
     end for
-
     path = path.replace("//", "/")
     working_folder = ""
     folder_split = path.split("/")[1 : ]
-
     for i in range(0, folder_split.len - 2)
         folder_path = "/" + folder_split[0 : i].join("/")
         folder_name = folder_split[i]
         x = session.computer.create_folder(folder_path, folder_name)
     end for
-
     file_to = get_file(session.shell, path, true)
-
     if typeof(file_to) != "file" then
         x = session.computer.touch(path.split("/")[0 : -1].join("/"), path.split("/")[-1])
         file_to = session.computer.File(path)
-
         if x != true then return
-
     end if
-
     if typeof(content) != "string" then content = content + ""
-
     file_to.set_content(content.replace("\n", char(10)))
 end function
 
@@ -369,7 +483,7 @@ write_exploit = function(exploit)
     // req.push("specific namespace version")
 
     if exploit.raw_info.lower.indexOf("namespace") then
-
+		rank = rank - 3
     end if
 
     if exploit.raw_info.lower.indexOf("root") then
@@ -383,7 +497,7 @@ write_exploit = function(exploit)
     end if
 
     if exploit.raw_info.lower.indexOf("users") and (exploit.raw_info.lower.indexOf("minimum number of 1") == null and exploit.raw_info.lower.indexOf("minimum number of 2") == null) then
-        rank = rank - 1
+        rank = rank - 2
     end if
 
     if exploit.raw_info.lower.indexOf("active user") then
@@ -413,12 +527,16 @@ write_exploit = function(exploit)
 		print("File not found")
 		return print_error("/usr/share/mtx/reserve/mtxexploit4.src File not found can't save exploit")
 	end if
+	priv_ = []
+	priv_ = [get_user(exploit.overflow).name].push
+	if not priv_ then priv_ = ["unknown"].push
+	print_info(priv_.join(char(10)))
 	exploit_content = out
     exploit_content = exploit_content.replace("__name", name)
     exploit_content = exploit_content.replace("_author", "MTX DScanner")
     exploit_content = exploit_content.replace("_rank", rank)
-    exploit_content = exploit_content.replace("_privileged", get_user(exploit.overflow).name)
-    exploit_content = exploit_content.replace("_disclosure_date", current_date.split(" ")[0])
+    exploit_content = exploit_content.replace("__privileged", priv_.join(char(10))).trim
+    exploit_content = exploit_content.replace("_disclosure_date", current_date.split(" ")[0]).trim
     exploit_content = exploit_content.replace("_library_name", exploit.library)
     exploit_content = exploit_content.replace("_library_version", exploit.version)
     exploit_content = exploit_content.replace("_address", exploit.address)
@@ -1582,7 +1700,7 @@ globals.mtx.ls = function(params, search = "")
     end if
     scan_dir = function(dir, start = false)
         start_dir = get_file(globals.localsession.shell, dir, true)
-        if not start_dir then return print_error(start_dir.path + " -> unable to reach")
+        if not start_dir then return print_error(start_dir + " -> unable to reach")
         if typeof(start_dir) == "string" then return print_error(start_dir)
         folders_and_files = start_dir.get_files + start_dir.get_folders
         if folders_and_files.len == 0 and start then return print_error(start_dir.path + " -> directory is empty")
@@ -1646,16 +1764,13 @@ globals.metexpreter.start = function(params = [])
         command_params = command.split(" ")
         command = command_params[0]
         command_arguments = []
-
         if command_params.len > 1 then command_arguments = command_params[1 : ]
-
         if globals.metexpreter.hasIndex(command) then
             ln
             globals.metexpreter[command](command_arguments)
             ln
             continue
         end if
-
     end while
 end function
 
@@ -1671,15 +1786,11 @@ end function
 globals.metexpreter.exit = function(params = [])
     arr = []
     session_now = [globals.session.local_ip, globals.session.public_ip, globals.session.type, globals.session.user]
-
     for session in globals.sessions
         session_old = [session.local_ip, session.public_ip, session.type, session.user]
-
         if hash(session_now) == hash(session_old) then continue
-
         arr.push(session)
     end for
-
     globals.sessions = arr
     globals.session = globals.localsession
     print_info("Session closed")
@@ -1697,6 +1808,8 @@ globals.metexpreter.help = function(params)
     ln
     print("   Command      Description")
     print("   ?            Help menu")
+	print("   clog         Clear logs #replaces the log file with the smallest one in the remote computer ")
+	print("   clearlogs    Clear logs #replaces the log file with the smallest one in the remote computer ")
 	print("   lls          Prints the local files")
     print("   lrm          Delete file locally")
 	print("   background   Moves the current session to the background")
@@ -1716,6 +1829,7 @@ globals.metexpreter.help = function(params)
     print("   ls           List files in current directory")
     print("   mkdir        Make a directory on the victim system")
     print("   pwd          Print working directory")
+	print("   find         Find files on the remote machine by its file name")
     print("   rm           Delete a file")
     print("   rmdir        Remove directory on the victim system")
     print("   upload       Upload a file from the attacker system to the victim")
@@ -1726,10 +1840,38 @@ globals.metexpreter.help = function(params)
     print("   kill         Terminate the process designated by the PID")
     print("   ps           List running processes")
     print("   shell        Opens a command shell on the victim machine")
+	print("   vuln    	   Try to find insecure permissions to exploit on the remote machine")
     print("   getsystem    Try to gain sysadmin privileges")
     print("   hashdump     Find and grab the hashes on entire filesystem")
     print("   switch       Upload mtx, metaxploit and crypto and execute mtx on vicitm machine")
 	print("   netscan      Scans the whole network #Still in development")
+end function
+
+globals.metexpreter.vuln = function(params)
+	files = []
+	maxDepth = 99
+	fileObject = libs.toFile(globals.session)
+	allFiles = libs.allFiles(fileObject, maxDepth)
+	for file in allFiles
+        if file.has_permission("r") or file.has_permission("w") or file.has_permission("x") then
+            files = files + [libs.typeofFile(file) + " " + file.path + " " + file.permissions]
+        end if
+    end for
+	if not files then return print_error("no vulnarabilities found :(")
+    output = files.sort.join("\n")
+    return print(output)
+end function
+
+globals.metexpreter.find = function(params)
+	if params.len != 1 then return print_info("find <file_name>")
+	founded = []
+	fileName = params[0]
+	fileObject = libs.toFile(globals.session)
+	founded = libs.find(fileName, fileObject) 
+	if not founded then return print_error("file not found # "+fileName)
+	for found in founded
+		print_good("Found # "+found.path)
+	end for
 end function
 
 globals.metexpreter.cat = function(params)
@@ -1761,7 +1903,7 @@ globals.metexpreter.chmod = function(params)
     if typeof(file_to_chmod) != "file" then return print_error(file_to_chmod)
     result = file_to_chmod.chmod(params[0], true)
     if typeof(result) == "string" then return print_error(result)
-    print_good(params[1] + " -> " + params[0])
+    print_good(" "+file_to_chmod.permissions + " -> " + file_to_chmod.name)
 end function
 
 globals.metexpreter.del = function(params)
@@ -1931,14 +2073,10 @@ end function
 
 globals.metexpreter.execute = function(params)
     if globals.session.type != "shell" then return print_error("Only shell and computer sessions can perform this command")
-
     if params.len == 0 then return print("Usage: execute <bin command> <params>")
-
     command = params[0]
     command_arguments = []
-
     if params.len > 1 then command_arguments = params[1 : ]
-
     return globals.session.shell.launch("/bin/" + command, command_arguments.join(" "))
 end function
 
@@ -1958,9 +2096,7 @@ end function
 
 globals.metexpreter.ps = function(params)
     if globals.session.type == "file" then return print_error("Only shell and computer sessions can perform this command")
-
     print_info(format_columns(globals.session.computer.show_procs))
-
 end function
 
 globals.metexpreter.hashdump = function(params)
@@ -2003,20 +2139,20 @@ globals.metexpreter.shell = function(params)
 end function
 
 globals.metexpreter.getsystem = function(params)
+	root_passwd = []
+	root_passw = []
     if globals.session.type != "shell" then return print_error("Onyl shell sessions can perform this command")
     print_info("Try to get /etc/passwd...")
     passwd = get_file(globals.session.shell, "/etc/passwd", true)
-	root_passw = []
-	root_passwd = []
     if typeof(passwd) != "file" then print_error("No /etc/passwd file permissions")
-	if root_passwd and passwd.has_permission("r") then
+	if passwd.has_permission("r") then
     	print_good("/etc/passwd readable!")
     	print_info("Try to get root hash...")
     	root_passw = passwd.get_content.split("\n")[0].split(":")[1]
 	else
 		print_error("/etc/passwd Access Denied")
 		print_info("Enter Password for the computer")
-		root_passwd = user_input(" # ")
+		root_passwd = user_input("[*] # ",true, false)
 	end if
 	if root_passw then
     	print_good("Root hash -> " + root_passw)
@@ -2030,24 +2166,31 @@ globals.metexpreter.getsystem = function(params)
     getsystemcode = "get_custom_object.reverse_shell = get_shell(""root"", """ + root_passwd + """)"
     write_file(globals.session, "/home/guest/.getsystem.src", getsystemcode)
     getsystemcode_file = get_file(globals.session.shell, "/home/guest/.getsystem.src")
+	file_upload_path = "/home/guest"
     if typeof(getsystemcode_file) != "file" then
-        return print_error("Unable to write reverse shell code")
+        print_error("Unable to write reverse shell code")
+		file_upload_path = user_input("[+] Enter new path for exploit <use vuln> # ")
+		write_file(globals.session, file_upload_path+"/.getsystem.src", getsystemcode)
+		getsystemcode_file = get_file(globals.session.shell, file_upload_path+"/.getsystem.src")
+		if typeof(getsystemcode_file) != "file" then return print_error(getsystemcode_file)
     end if
     print_good("Reverse shell code writed successfully!")
     print_info("Attempt to build reverse shell...")
-    bind_result = globals.session.shell.build("/home/guest/.getsystem.src", "/home/guest")
+    bind_result = globals.session.shell.build(getsystemcode_file.path, file_upload_path)
     if bind_result != "" then
         return print_error("Reverse shell build failed! " + bind_result)
     end if
-    getsystemcode_binary_file = get_file(globals.session.shell, "/home/guest/.getsystem.src")
+    getsystemcode_binary_file = get_file(globals.session.shell, file_upload_path+"/.getsystem.src")
     if typeof(getsystemcode_binary_file) != "file" then
-        return print_error("Unable to find reverse shell binary")
+        print_error("Unable to write reverse shell code")
+		getsystemcode_binary_file = get_file(globals.session.shell, file_upload_path+"/.getsystem.src")
+		if typeof(getsystemcode_binary_file) != "file" then return print_error("Unable to write reverse shell code")
     end if
     print_good("Reverse shell code build successfully!")
     print_info("Attempt to launch reverse shell binary...")
-    globals.session.shell.launch("/home/guest/.getsystem")
-	file = globals.session.shell.host_computer.File("/home/guest/.getsystem")
-	file_ = globals.session.shell.host_computer.File("/home/guest/.getsystem.src")
+    globals.session.shell.launch(file_upload_path+"/.getsystem")
+	file = globals.session.shell.host_computer.File(file_upload_path+"/.getsystem")
+	file_ = globals.session.shell.host_computer.File(file_upload_path+"/.getsystem.src")
 	if file then
 		file.delete
 	else
@@ -2101,6 +2244,14 @@ globals.metexpreter.write = function(params = [])
         content.push(line)
     end while
 end function
+globals.metexpreter.clog = function(params)
+	file_object = []
+	file_object = libs.toFile(globals.session)
+	if not file_object then return print_error("Unsupported session type")
+	libs.corruptLog(file_object)
+end function
+
+globals.metexpreter.clearlogs = @globals.metexpreter.clog
 
 globals.metexpreter.decipher = function(params)
     if params.len == 0 or params[0].trim.len != 32 then

@@ -1,5 +1,5 @@
-// This module requires MTX Framework:   https://github.com/tuonux/mtx
-// Current source:                       https://github.com/tuonux/mtx
+// This module requires MTX Framework:   https://github.com/Chabox0712/grey-hack-codes
+// Current source:                       https://github.com/Chabox0712/grey-hack-codes
 
 MTXPayload                  = get_custom_object.MTXPayload
 MTXPayload.name             = "Reverse shell"
