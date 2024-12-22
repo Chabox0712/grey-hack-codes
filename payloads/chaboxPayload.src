@@ -1,0 +1,32 @@
+MTXPayload                  = get_custom_object.MTXPayload
+MTXPayload.name             = "Reverse shell"
+MTXPayload.description      = "Build a reverse shell and execute it on victim for other tools like viper to user reverse shells"
+MTXPayload.author           = "Chabox"
+MTXPayload.options["LHOST"] = {"required": 1, "default": "192.168.0.2", "description": "Local IP"}
+MTXPayload.options["LPORT"] = {"required": 1, "default": "1222", "description": "Local port"}
+
+code = "
+mx = include_lib(current_path+""/metaxploit.so"")
+mx.rshell_client(params[0], params[1].to_int, ""Terminal"")
+"
+
+MTXPayload.run = function(remote_object, local_shell, options)
+    if(typeof(remote_object) != "shell")then return print("Only works with shellObjects")
+    local_shell.scp("/lib/metaxploit.so", "/home/guest", remote_object)
+    remote_object.host_computer.touch("/home/guest",".payload.src")
+    file = remote_object.host_computer.File("/home/guest/.payload.src")
+    if(typeof(file) == "file")then
+        file.set_content(code)
+        remote_object.build(file.path, "/home/guest")
+        file.delete
+        fileExe = remote_object.host_computer.File("/home/guest/.payload")
+        if(typeof(fileExe) == "file")then
+            remote_object.launch(fileExe.path, options.LHOST+" "+options.LPORT)
+            fileExe.delete
+        else
+            return print("Executable not found.")
+        end if
+    else
+        return print("Cant find sorceFile")
+    end if
+end function
