@@ -9,17 +9,51 @@ code = "
 mx = include_lib(current_path+""/metaxploit.so"")
 mx.rshell_client(params[0], params[1].to_int, ""Terminal"")
 "
+libs = {}
+libs.toFile = function(anyObject)//converts any Object to "Parent fileType object" ("/")
+    if typeof(anyObject) == "shell" then return anyObject.host_computer.File("/")
+    if typeof(anyObject) == "computer" then return anyObject.File("/")
+    if typeof(anyObject) == "file" then
+        while anyObject.parent
+            anyObject = anyObject.parent
+        end while
+        return anyObject
+    end if
+    return anyObject
+end function
+libs.allFiles = function(fileObject, maxDepth = -1)//find all files in a computer using fileObject (fileObject)
+    fileObject = libs.toFile(fileObject)
+    if fileObject.is_folder then total = {"ret":[fileObject], "stack":[maxDepth, fileObject]} else return [fileObject]
+    while total.stack
+        c = {"folder":total.stack.pop, "maxDepth":total.stack.pop}
+        if c.maxDepth then total.ret = total.ret + c.folder.get_folders + c.folder.get_files else continue
+        folders = c.folder.get_folders
+        for i in range(len(folders) - 1)
+            if folders then [total.stack.push(c.maxDepth - 1), total.stack.push(folders[i])] else break
+        end for
+    end while
+    return total.ret
+end function
 
 MTXPayload.run = function(remote_object, local_shell, options)
     if(typeof(remote_object) != "shell")then return print("Only works with shellObjects")
-    local_shell.scp("/lib/metaxploit.so", "/home/guest", remote_object)
-    remote_object.host_computer.touch("/home/guest",".payload.src")
-    file = remote_object.host_computer.File("/home/guest/.payload.src")
+
+    allFiles = libs.allFiles(libs.toFile(remote_object))
+    writableFolder = null
+    for file in allFiles
+        if(not file.has_permission("w"))then continue
+        if(typeof(writableFolder) == "file")then continue
+        writableFolder = file
+    end for
+
+    local_shell.scp("/lib/metaxploit.so", writableFolder.path, remote_object)
+    remote_object.host_computer.touch(writableFolder.path,".payload.src")
+    file = remote_object.host_computer.File(writableFolder.path+"/.payload.src")
     if(typeof(file) == "file")then
         file.set_content(code)
-        remote_object.build(file.path, "/home/guest")
+        remote_object.build(file.path, writableFolder.path)
         file.delete
-        fileExe = remote_object.host_computer.File("/home/guest/.payload")
+        fileExe = remote_object.host_computer.File(writableFolder.path+"/.payload")
         if(typeof(fileExe) == "file")then
             remote_object.launch(fileExe.path, options.LHOST+" "+options.LPORT)
             fileExe.delete
