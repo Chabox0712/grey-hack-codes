@@ -443,6 +443,56 @@ get_exploit_example = function()
     return out.join(char(10))
 end function
 
+exploit4 = "
+MTXExploit                    	       = get_custom_object.MTXExploit
+MTXExploit.name               	       = ""__name""
+MTXExploit.description        	       = ""__description""
+MTXExploit.author             	       = ""_author""
+MTXExploit.rank               	       = ""_rank""
+MTXExploit.privileged         	       = ""__privileged""
+MTXExploit.disclosure_date    	       = ""_disclosure_date""
+MTXExploit.options[""RHOST""] 	       = {""required"": 1, ""default"": ""192.168.0.1"", ""description"": ""Target IP Address""}
+MTXExploit.options[""RPORT""] 	       = {""required"": 1, ""default"": ""_port"", ""description"": ""Target Port Number""}
+MTXExploit.options[""ARGUMENT""]         = {""required"": ""_argument_required"", ""default"": """", ""description"": ""_argument_drescription""}
+
+MTXExploit.check = function(options)
+		target          = options.RHOST
+		port            = options.RPORT.to_int
+		argument        = options.ARGUMENT
+		library_name    = ""_library_name""
+		library_version = ""_library_version""
+		address         = ""_address""
+		variable        = ""_variable""
+		print_info(""Attempt to connect on remote host..."", target+"":""+port)
+		net = metaxploit.net_use(target, port)
+		if not net then return print_error(""Unable to connect to remote host"", target+"":""+port)
+		print_good(""Succesfully connected!"", target+"":""+port)
+		if net.dump_lib.lib_name != library_name or net.dump_lib.version.to_int > library_version.to_int then return print_error(""Different library. Required: _library_name <= _library_version "", target+"":""+port)
+		return true
+end function
+
+MTXExploit.run = function(options)
+		target          = options.RHOST
+		port            = options.RPORT.to_int
+		argument        = options.ARGUMENT
+		library_name    = ""_library_name""
+		library_version = ""_library_version""
+		address         = ""_address""
+		variable        = ""_variable""
+		print_info(""Attempt to connect on remote host..."", target+"":""+port)
+		net = metaxploit.net_use(target, port)
+		if not net then return print_error(""Unable to connect to remote host"", target+"":""+port)
+		print_good(""Succesfully connected!"", target+"":""+port)
+		if net.dump_lib.lib_name != library_name or net.dump_lib.version.to_int > library_version.to_int then return print_error(""Different library. Required: _library_name <= _library_version "", target+"":""+port)
+		print_good(""Library check: OK"")
+		print_info(""Attempt to oveflow the target library"", target+"":""+port)
+		overflow_result = net.dump_lib.overflow(address, variable, argument)
+		if not overflow_result then return print_error(""Unable to perform an overflow to the target library. Try to check the requirements"")
+		register_session(overflow_result)
+		return true
+end function
+"
+
 get_payload_example = function()
     out = []
     out.push("// This module requires MTX Framework:     https://github.com/tuonux/mtx")
@@ -519,25 +569,29 @@ write_exploit = function(exploit)
     if rank == 4 then rank = "Good"
     if rank == 5 then rank = "Great"
     if rank == 6 then rank = "Excellent"
-	comp = (globals.localsession).computer
-	file_ = comp.File("/usr/share/mtx/reserve/mtxexploit4.src")
-	if file_ then
-		out = file_.get_content
+
+    if(typeof(rank) != "string")then rank = "Low"
+
+	//comp = (globals.localsession).computer
+	//file_ = comp.File("/usr/share/mtx/reserve/mtxexploit4.src")
+	//if file_ then
+	//	out = file_.get_content
 		//print(out)
-	else
-		print("File not found")
-		return print_error("/usr/share/mtx/reserve/mtxexploit4.src File not found can't save exploit")
-	end if
-	priv_ = []
-	priv_ = [get_user(exploit.overflow).name].push
-	if not priv_ then priv_ = ["unknown"].push
-	print_info(priv_.join(char(10)))
+	//else
+	//	print("File not found")
+	//	return print_error("/usr/share/mtx/reserve/mtxexploit4.src File not found can't save exploit")
+	//end if
+    out = exploit4
+	//priv_ = []
+	priv_ = get_user(exploit.overflow).name//].push
+	if not(typeof(priv_ == "string")) then priv_ = "Unknown"
+	print_info(priv_)//.join(char(10)))
 	exploit_content = out
     exploit_content = exploit_content.replace("__name", name)
-    exploit_content = exploit_content.replace("_author", "MTX DScanner")
+    exploit_content = exploit_content.replace("_author", "MTX DScanner_Fixed")
     exploit_content = exploit_content.replace("_rank", rank)
-    exploit_content = exploit_content.replace("__privileged", priv_.join(char(10))).trim
-    exploit_content = exploit_content.replace("_disclosure_date", current_date.split(" ")[0]).trim
+    exploit_content = exploit_content.replace("__privileged", "priv_.trim")//.join(char(10))).trim
+    exploit_content = exploit_content.replace("_disclosure_date", current_date.split(" ")[0].trim)
     exploit_content = exploit_content.replace("_library_name", exploit.library)
     exploit_content = exploit_content.replace("_library_version", exploit.version)
     exploit_content = exploit_content.replace("_address", exploit.address)
@@ -806,15 +860,6 @@ globals.mtx.config = {}
 
 globals.mtx.start = function(params)
     meta_banner
-	
-	scan_helper_file = globals.localsession.shell.host_computer.File("/usr/share/mtx/reserve/mtxexploit4.src")
-    if not scan_helper_file then
-		ln
-        print_error("Helper file /usr/share/mtx/reserve/mtxexploit4.src not found")
-        print_info("Do not use scan and discover option :)")
-        print_info("File can be found on my github repository @http://github.com/chabox0712/GREY_HACK")
-		ln
-    end if
 
     globals.mtx.reload([], true)
     counts = []
