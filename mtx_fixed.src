@@ -572,15 +572,6 @@ write_exploit = function(exploit)
 
     if(typeof(rank) != "string")then rank = "Low"
 
-	//comp = (globals.localsession).computer
-	//file_ = comp.File("/usr/share/mtx/reserve/mtxexploit4.src")
-	//if file_ then
-	//	out = file_.get_content
-		//print(out)
-	//else
-	//	print("File not found")
-	//	return print_error("/usr/share/mtx/reserve/mtxexploit4.src File not found can't save exploit")
-	//end if
     out = exploit4
 	//priv_ = []
 	priv_ = get_user(exploit.overflow).name//].push
@@ -590,7 +581,7 @@ write_exploit = function(exploit)
     exploit_content = exploit_content.replace("__name", name)
     exploit_content = exploit_content.replace("_author", "MTX DScanner_Fixed")
     exploit_content = exploit_content.replace("_rank", rank)
-    exploit_content = exploit_content.replace("__privileged", "priv_.trim")//.join(char(10))).trim
+    exploit_content = exploit_content.replace("__privileged", priv_.trim)//.join(char(10))).trim
     exploit_content = exploit_content.replace("_disclosure_date", current_date.split(" ")[0].trim)
     exploit_content = exploit_content.replace("_library_name", exploit.library)
     exploit_content = exploit_content.replace("_library_version", exploit.version)
