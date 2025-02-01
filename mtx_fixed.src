@@ -169,6 +169,87 @@ libs.typeofFile = function(fileObject)
     if fileObject.is_binary then return "bin"
     return "txt"
 end function
+libs.chaboxPyalod ="MTXPayload                  = get_custom_object.MTXPayload
+MTXPayload.name             = ""Reverse shell""
+MTXPayload.description      = ""Build a reverse shell and execute it on victim for other tools like viper to user reverse shells""
+MTXPayload.author           = ""Chabox""
+MTXPayload.options[""LHOST""] = {""required"": 1, ""default"": ""192.168.0.2"", ""description"": ""Local IP""}
+MTXPayload.options[""LPORT""] = {""required"": 1, ""default"": ""1222"", ""description"": ""Local port""}
+
+code = ""
+mx = include_lib(current_path+""""/metaxploit.so"""")
+mx.rshell_client(params[0], params[1].to_int, """"Terminal"""")
+""
+libs = {}
+libs.toFile = function(anyObject)//converts any Object to ""Parent fileType object"" (""/"")
+    if typeof(anyObject) == ""shell"" then return anyObject.host_computer.File(""/"")
+    if typeof(anyObject) == ""computer"" then return anyObject.File(""/"")
+    if typeof(anyObject) == ""file"" then
+        while anyObject.parent
+            anyObject = anyObject.parent
+        end while
+        return anyObject
+    end if
+    return anyObject
+end function
+libs.allFiles = function(fileObject, maxDepth = -1)//find all files in a computer using fileObject (fileObject)
+    fileObject = libs.toFile(fileObject)
+    if fileObject.is_folder then total = {""ret"":[fileObject], ""stack"":[maxDepth, fileObject]} else return [fileObject]
+    while total.stack
+        c = {""folder"":total.stack.pop, ""maxDepth"":total.stack.pop}
+        if c.maxDepth then total.ret = total.ret + c.folder.get_folders + c.folder.get_files else continue
+        folders = c.folder.get_folders
+        for i in range(len(folders) - 1)
+            if folders then [total.stack.push(c.maxDepth - 1), total.stack.push(folders[i])] else break
+        end for
+    end while
+    return total.ret
+end function
+
+MTXPayload.run = function(remote_object, local_shell, options)
+    if(typeof(remote_object) != ""shell"")then return print_error(""Only works with shellObjects"")
+
+    allFiles = libs.allFiles(libs.toFile(remote_object))
+    writableFolder = null
+    for file in allFiles
+        if(not file.has_permission(""w""))then continue
+        if(typeof(writableFolder) == ""file"")then
+            if(writableFolder.is_folder)then continue
+        end if
+        writableFolder = file
+    end for
+    if(typeof(writableFolder) != ""file"")then return print_error(""Not writable file found on the system."")
+    if(writableFolder.is_folder)then
+        isFolder = ""<color=green>true</color=green>""
+    else
+        isFolder = ""<color=red>false</color=red>""
+    end if
+    print_info(char(10)+""Payload executing"")
+    print_info(""Upload metaxploit library to victim"")
+    local_shell.scp(""/lib/metaxploit.so"", writableFolder.path, remote_object)
+    print_info(writableFolder.path+"" Is_Filder [""+isFolder+""]"")
+    remote_object.host_computer.touch(writableFolder.path,"".payload.src"")
+    print_info(""Wrtite reverse shell code"")
+    file = remote_object.host_computer.File(writableFolder.path+""/.payload.src"")
+    if(typeof(file) == ""file"")then
+        file.set_content(code)
+        remote_object.build(file.path, writableFolder.path)
+        print_info(""Build reverse shell"")
+        file.delete
+        fileExe = remote_object.host_computer.File(writableFolder.path+""/.payload"")
+        if(typeof(fileExe) == ""file"")then
+            print_info(""Launch reverse shell binary on victim"")
+            remote_object.launch(fileExe.path, options.LHOST+"" ""+options.LPORT)
+            fileExe.delete
+            print_good(""done"")
+        else
+            return print_error(""Executable not found."")
+        end if
+    else
+        return print_error(""Cant find sorceFile"")
+    end if
+end function"
+
 
 if not metaxploit then
     metaxploit_path = current_path + "/metaxploit.so"
@@ -2371,4 +2452,17 @@ globals.metexpreter.netscan = @globals.mtx.netscan
 // end while
 // END FOR DEBUG PURPOSE ONLY
 
+	setContentPayload = function(file, content)
+        file.set_content(content)
+    end function
+
+    payloadFile = globals.localsession.computer.File("/usr/share/mtx/payloads/chaboxRshellPayload.src")
+
+    if(typeof(payloadFile) == "file")then
+        if(not payloadFile.get_content)then setContentPayload(payloadFile, libs.chaboxPyalod)
+    else
+        globals.localsession.computer.touch("/usr/share/mtx/payloads", "chaboxRshellPayload.src")
+        payloadFile = globals.localsession.computer.File("/usr/share/mtx/payloads/chaboxRshellPayload.src")
+        if(typeof(payloadFile) == "file")then setContentPayload(payloadFile, libs.chaboxPyalod)
+    end if
 globals.mtx.start
