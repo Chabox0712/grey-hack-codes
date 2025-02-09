@@ -923,7 +923,7 @@ end function
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 globals.sessions = []
-register_session(get_shell)
+register_session(get_shell())
 globals.localsession = globals.sessions[0]
 globals.session = globals.localsession
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1025,12 +1025,23 @@ globals.mtx.reload = function(params = [], first_loading = false)
     globals.localsession.computer.create_folder("/usr/share/mtx", "exploits")
     globals.localsession.computer.create_folder("/usr/share/mtx/exploits", "custom")
     globals.localsession.computer.create_folder("/usr/share/mtx", "payloads")
+    setContentPayload = function(file, content)
+        file.set_content(content)
+    end function
+    payloadFile = globals.localsession.computer.File("/usr/share/mtx/payloads/chaboxRshellPayload.src")
+    if(typeof(payloadFile) == "file")then
+        if(not payloadFile.get_content)then setContentPayload(payloadFile, libs.chaboxPyalod)
+    else
+        globals.localsession.computer.touch("/usr/share/mtx/payloads", "chaboxRshellPayload.src")
+        payloadFile = globals.localsession.computer.File("/usr/share/mtx/payloads/chaboxRshellPayload.src")
+        if(typeof(payloadFile) == "file")then setContentPayload(payloadFile, libs.chaboxPyalod)
+    end if
 	globals.localsession.computer.create_folder("/usr/share/mtx", "reserve")
 	globals.localsession.computer.create_folder("/usr/share/mtx", "build")
 
     scan_exploits_dir = function(path, forcepath = false)
         current_file = globals.localsession.computer.File(path)
-
+        if(typeof(current_file) != "file")then return "file not found"
         if not forcepath then
             if current_file.is_folder then
                 for folder in current_file.get_folders + current_file.get_files
@@ -1069,7 +1080,7 @@ globals.mtx.reload = function(params = [], first_loading = false)
 
     scan_payloads_dir = function(path, forcepath = false)
         current_file = globals.localsession.computer.File(path)
-
+        if(typeof(current_file) != "file")then return "file not found"
         for payload_file in current_file.get_files
             current_content = payload_file.get_content
             
@@ -1098,6 +1109,20 @@ end function
 globals.mtx.search = function(params)
     if params.len < 1 then return print_error("Usage: search <key>")
     return make_table(globals.mtx.exploits, "Exploits", {"id": {"label": "name", "uf": false}, "disclosure_date": {"label": "Disclosure Date"}, "rank": {"label": "Rank"}, "name": {"label": "Description"}}, params)
+end function
+
+globals.mtx.randomip = function(params)
+    randomIp = function ()
+    ip = ""
+    for i in range(1, 4)
+        ip = ip + floor(rnd() * 255)
+        if i < 4 then ip = ip + "."
+    end for
+    if get_router(ip) == null then return randomIp()
+    return ip
+    end function
+
+    print(randomIp())
 end function
 
 globals.mtx.ifconfig = function(params)
@@ -1779,6 +1804,7 @@ globals.mtx.help = function(params)
     print("   Command      Description")
     print("   -------      -----------")
     print("   ?            Help menu")
+    print("   randomip     Get a randomip from generator")
 	print("   ifconfig     Show local network infomation")
     print("   cd           Change the current working directory")
     print("   connect      Communicate with an ssh host")
@@ -2452,17 +2478,4 @@ globals.metexpreter.netscan = @globals.mtx.netscan
 // end while
 // END FOR DEBUG PURPOSE ONLY
 
-	setContentPayload = function(file, content)
-        file.set_content(content)
-    end function
-
-    payloadFile = globals.localsession.computer.File("/usr/share/mtx/payloads/chaboxRshellPayload.src")
-
-    if(typeof(payloadFile) == "file")then
-        if(not payloadFile.get_content)then setContentPayload(payloadFile, libs.chaboxPyalod)
-    else
-        globals.localsession.computer.touch("/usr/share/mtx/payloads", "chaboxRshellPayload.src")
-        payloadFile = globals.localsession.computer.File("/usr/share/mtx/payloads/chaboxRshellPayload.src")
-        if(typeof(payloadFile) == "file")then setContentPayload(payloadFile, libs.chaboxPyalod)
-    end if
 globals.mtx.start
